@@ -281,6 +281,39 @@ func reverseNumArr[N Number](arr []N) []N {
 	return res
 }
 
+func transposeMat[N Number](mx [][]N) [][]N {
+	h, w := sizeNumField(mx)
+	cp := makeNumField[N](w, h)
+	for i := 0; i < h; i++ {
+		for j := 0; j < w; j++ {
+			cp[j][i] = mx[i][j]
+		}
+	}
+	return cp
+}
+
+func reverseMatHor[N Number](mx [][]N) [][]N {
+	h, w := sizeNumField(mx)
+	cp := makeNumField[N](h, w)
+	for i := 0; i < h; i++ {
+		for j := 0; j < w; j++ {
+			cp[i][w-1-j] = mx[i][j]
+		}
+	}
+	return cp
+}
+
+func reverseMatVer[N Number](mx [][]N) [][]N {
+	h, w := sizeNumField(mx)
+	cp := makeNumField[N](h, w)
+	for i := 0; i < h; i++ {
+		for j := 0; j < w; j++ {
+			cp[h-1-i][j] = mx[i][j]
+		}
+	}
+	return cp
+}
+
 // Deprecated: please use `reverseNumArr` instead.
 func reverseIntArr(arr []int) []int {
 	return reverseNumArr(arr)

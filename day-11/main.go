@@ -19,29 +19,24 @@ func (m *Monkey) String() string {
 	return fmt.Sprintf("Monkey %d: %+v", m.id, m.items)
 }
 
+var (
+	READ_STR_OP_STR func(string) (string, byte, string)
+)
+
 func parseMonkey(lines []string, ix int) (*Monkey, int) {
 	monkey := &Monkey{}
-	ptr := 0
-	_, ptr = readStr(lines[ix], 0, "Monkey ")
-	monkey.id, _ = readInt(lines[ix], ptr)
+	monkey.id = parse("Monkey {int}", READ_INT)(lines[ix])
 	ix++
-	_, ptr = readStr(lines[ix], 0, "  Starting items: ")
-	monkey.items = parseInts(lines[ix][ptr:])
+	monkey.items = parse("  Starting items: {[]int}", READ_INT_ARR)(lines[ix])
 	ix++
-	_, ptr = readStr(lines[ix], 0, "  Operation: new = ")
-	monkey.op[0], ptr = readWord(lines[ix], ptr)
-	monkey.op[1] = lines[ix][ptr+1 : ptr+2]
-	ptr += 3
-	monkey.op[2], ptr = readWord(lines[ix], ptr)
+	a, op, b := parse("  Operation: new = {string} {byte} {string}", READ_STR_OP_STR)(lines[ix])
+	monkey.op = [3]string{a, string(op), b}
 	ix++
-	_, ptr = readStr(lines[ix], 0, "  Test: divisible by ")
-	monkey.test, _ = readInt(lines[ix], ptr)
+	monkey.test = parse("  Test: divisible by {int}", READ_INT)(lines[ix])
 	ix++
-	_, ptr = readStr(lines[ix], 0, "    If true: throw to monkey ")
-	monkey.testTrue, _ = readInt(lines[ix], ptr)
+	monkey.testTrue = parse("    If true: throw to monkey {int}", READ_INT)(lines[ix])
 	ix++
-	_, ptr = readStr(lines[ix], 0, "    If false: throw to monkey ")
-	monkey.testFalse, _ = readInt(lines[ix], ptr)
+	monkey.testFalse = parse("    If false: throw to monkey {int}", READ_INT)(lines[ix])
 	ix++
 
 	return monkey, ix

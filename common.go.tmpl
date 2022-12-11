@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
 )
@@ -502,6 +503,20 @@ func readInt(s string, ptr int) (int, int) {
 	return parseInt(s[from:ptr]), ptr
 }
 
+func readFloat64(s string, ptr int) (float64, int) {
+	from := ptr
+	comma := 0
+	for ptr < len(s) && isNumber(s[ptr]) || (comma < 1 && match(s, ptr, '.')) {
+		if match(s, ptr, '.') {
+			comma++
+		}
+		ptr++
+	}
+	f, err := strconv.ParseFloat(s[from:ptr], 64)
+	noerr(err)
+	return f, ptr
+}
+
 func readStr(s string, ptr int, lex string) (string, int) {
 	off := 0
 	for (ptr+off) < len(s) && off < len(lex) {
@@ -515,7 +530,7 @@ func readStr(s string, ptr int, lex string) (string, int) {
 
 func readWord(s string, ptr int) (string, int) {
 	from := ptr
-	for ptr < len(s) && isAlpha(s[ptr]) {
+	for ptr < len(s) && (isAlpha(s[ptr]) || isNumber(s[ptr])) {
 		ptr++
 	}
 	return s[from:ptr], ptr
@@ -565,4 +580,189 @@ func computeSubsetsOfLen[Item any](items []Item, n int) [][]Item {
 	}
 
 	return recurse(0, n)
+}
+
+type ParseInstrCode uint8
+
+const (
+	_ ParseInstrCode = iota
+	PARSE_BYTE
+	PARSE_INT
+	PARSE_FLOAT
+	PARSE_STC_STR
+	PARSE_VAR_STR
+	PARSE_INT_ARR
+	PARSE_STR_ARR
+)
+
+var (
+	PARSE_INSTR_CODE_MAP = map[string]ParseInstrCode{
+		"byte":     PARSE_BYTE,
+		"int":      PARSE_INT,
+		"float":    PARSE_FLOAT,
+		"string":   PARSE_VAR_STR,
+		"[]int":    PARSE_INT_ARR,
+		"[]string": PARSE_STR_ARR,
+	}
+)
+
+type ParseInstr struct {
+	code    ParseInstrCode
+	capture bool
+	arg     string
+}
+
+var (
+	READ_BYTE    func(string) byte
+	READ_INT     func(string) int
+	READ_FLOAT   func(string) float64
+	READ_STR     func(string) string
+	READ_INT_ARR func(string) []int
+	READ_STR_ARR func(string) []string
+
+	// helpers
+	READ_BYTE_BYTE         func(string) (byte, byte)
+	READ_BYTE_BYTE_BYTE    func(string) (byte, byte, byte)
+	READ_INT_INT           func(string) (int, int)
+	READ_INT_INT_INT       func(string) (int, int, int)
+	READ_FLOAT_FLOAT       func(string) (float64, float64)
+	READ_FLOAT_FLOAT_FLOAT func(string) (float64, float64, float64)
+	READ_STR_STR           func(string) (string, string)
+	READ_STR_STR_STR       func(string) (string, string, string)
+)
+
+func parse[T any](tmpl string, fnptr T) T {
+	ptr := 0
+	instrs := make([]*ParseInstr, 0, 1)
+	var instr *ParseInstr
+	for ptr < len(tmpl) {
+		instr, ptr = parseReadInstr(tmpl, ptr)
+		instrs = append(instrs, instr)
+	}
+
+	var aByte byte
+	var aInt int
+	var aFloat float64
+	var aStr string
+	var aIntArr []int
+	var aStrArr []string
+	outTypes := make([]reflect.Type, 0, 1)
+	for _, instr := range instrs {
+		if !instr.capture {
+			continue
+		}
+		var tt reflect.Type
+		switch instr.code {
+		case PARSE_BYTE:
+			tt = reflect.TypeOf(aByte)
+		case PARSE_INT:
+			tt = reflect.TypeOf(aInt)
+		case PARSE_FLOAT:
+			tt = reflect.TypeOf(aFloat)
+		case PARSE_VAR_STR:
+			tt = reflect.TypeOf(aStr)
+		case PARSE_INT_ARR:
+			tt = reflect.TypeOf(aIntArr)
+		case PARSE_STR_ARR:
+			tt = reflect.TypeOf(aStrArr)
+		default:
+			fatalf("Undefined type for instr: %+v", instr)
+		}
+		outTypes = append(outTypes, tt)
+	}
+
+	doParse := func(args []reflect.Value) []reflect.Value {
+		out := make([]reflect.Value, 0, 1)
+		s := args[0].Interface().(string)
+		ptr := 0
+
+		for _, instr := range instrs {
+			switch instr.code {
+			case PARSE_STC_STR:
+				_, ptr = readStr(s, ptr, instr.arg)
+			case PARSE_BYTE:
+				out = append(out, reflect.ValueOf(s[ptr]))
+				ptr++
+			case PARSE_INT:
+				var num int
+				num, ptr = readInt(s, ptr)
+				out = append(out, reflect.ValueOf(num))
+			case PARSE_FLOAT:
+				var num float64
+				num, ptr = readFloat64(s, ptr)
+				out = append(out, reflect.ValueOf(num))
+			case PARSE_VAR_STR:
+				var str string
+				str, ptr = readWord(s, ptr)
+				out = append(out, reflect.ValueOf(str))
+			case PARSE_INT_ARR:
+				arr := make([]int, 0, 1)
+				var num int
+				for ptr < len(s) {
+					num, ptr = readInt(s, ptr)
+					arr = append(arr, num)
+					if !match(s, ptr, ',') {
+						break
+					}
+					ptr++
+					ptr = eatWhitespace(s, ptr)
+				}
+				out = append(out, reflect.ValueOf(arr))
+			case PARSE_STR_ARR:
+				arr := make([]string, 0, 1)
+				var str string
+				for ptr < len(s) {
+					str, ptr = readWord(s, ptr)
+					arr = append(arr, str)
+					if !match(s, ptr, ',') {
+						break
+					}
+					ptr++
+					ptr = eatWhitespace(s, ptr)
+				}
+				out = append(out, reflect.ValueOf(arr))
+			default:
+				fatalf("Unsupported instr: %+v", instr)
+			}
+		}
+
+		return out
+	}
+
+	fnType := reflect.FuncOf(
+		[]reflect.Type{reflect.TypeOf(aStr)},
+		outTypes,
+		false,
+	)
+
+	fn := reflect.MakeFunc(fnType, doParse)
+	return fn.Interface().(T)
+}
+
+func parseReadInstr(tmpl string, ptr int) (*ParseInstr, int) {
+	if tmpl[ptr] == '{' {
+		ptr++
+		prev := ptr
+		for ptr < len(tmpl) && tmpl[ptr] != '}' {
+			ptr++
+		}
+		ii := tmpl[prev:ptr]
+		ptr++
+		if code, ok := PARSE_INSTR_CODE_MAP[ii]; ok {
+			return &ParseInstr{
+				code:    code,
+				capture: true,
+			}, ptr
+		}
+		fatalf("unrecognised parse instr: %s", ii)
+	}
+	prev := ptr
+	for ptr < len(tmpl) && tmpl[ptr] != '{' {
+		ptr++
+	}
+	return &ParseInstr{
+		code:    PARSE_STC_STR,
+		capture: false,
+		arg:     tmpl[prev:ptr],
+	}, ptr
 }

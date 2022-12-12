@@ -8,7 +8,6 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
-	"reflect"
 	"strconv"
 	"strings"
 )
@@ -590,187 +589,93 @@ func computeSubsetsOfLen[Item any](items []Item, n int) [][]Item {
 	return recurse(0, n)
 }
 
-type ParseInstrCode uint8
-
-const (
-	_ ParseInstrCode = iota
-	PARSE_BYTE
-	PARSE_INT
-	PARSE_FLOAT
-	PARSE_STC_STR
-	PARSE_VAR_STR
-	PARSE_INT_ARR
-	PARSE_STR_ARR
-)
-
-var (
-	PARSE_INSTR_CODE_MAP = map[string]ParseInstrCode{
-		"byte":     PARSE_BYTE,
-		"int":      PARSE_INT,
-		"float":    PARSE_FLOAT,
-		"string":   PARSE_VAR_STR,
-		"[]int":    PARSE_INT_ARR,
-		"[]string": PARSE_STR_ARR,
-	}
-)
-
-type ParseInstr struct {
-	code    ParseInstrCode
-	capture bool
-	arg     string
-}
-
-var (
-	READ_BYTE    func(string) byte
-	READ_INT     func(string) int
-	READ_FLOAT   func(string) float64
-	READ_STR     func(string) string
-	READ_INT_ARR func(string) []int
-	READ_STR_ARR func(string) []string
-
-	// helpers
-	READ_BYTE_BYTE         func(string) (byte, byte)
-	READ_BYTE_BYTE_BYTE    func(string) (byte, byte, byte)
-	READ_INT_INT           func(string) (int, int)
-	READ_INT_INT_INT       func(string) (int, int, int)
-	READ_FLOAT_FLOAT       func(string) (float64, float64)
-	READ_FLOAT_FLOAT_FLOAT func(string) (float64, float64, float64)
-	READ_STR_STR           func(string) (string, string)
-	READ_STR_STR_STR       func(string) (string, string, string)
-)
-
-func parse[T any](tmpl string, fnptr T) T {
-	ptr := 0
-	instrs := make([]*ParseInstr, 0, 1)
-	var instr *ParseInstr
-	for ptr < len(tmpl) {
-		instr, ptr = parseReadInstr(tmpl, ptr)
-		instrs = append(instrs, instr)
-	}
-
-	var aByte byte
-	var aInt int
-	var aFloat float64
-	var aStr string
-	var aIntArr []int
-	var aStrArr []string
-	outTypes := make([]reflect.Type, 0, 1)
-	for _, instr := range instrs {
-		if !instr.capture {
-			continue
-		}
-		var tt reflect.Type
-		switch instr.code {
-		case PARSE_BYTE:
-			tt = reflect.TypeOf(aByte)
-		case PARSE_INT:
-			tt = reflect.TypeOf(aInt)
-		case PARSE_FLOAT:
-			tt = reflect.TypeOf(aFloat)
-		case PARSE_VAR_STR:
-			tt = reflect.TypeOf(aStr)
-		case PARSE_INT_ARR:
-			tt = reflect.TypeOf(aIntArr)
-		case PARSE_STR_ARR:
-			tt = reflect.TypeOf(aStrArr)
-		default:
-			fatalf("Undefined type for instr: %+v", instr)
-		}
-		outTypes = append(outTypes, tt)
-	}
-
-	doParse := func(args []reflect.Value) []reflect.Value {
-		out := make([]reflect.Value, 0, 1)
-		s := args[0].Interface().(string)
-		ptr := 0
-
-		for _, instr := range instrs {
-			switch instr.code {
-			case PARSE_STC_STR:
-				_, ptr = readStr(s, ptr, instr.arg)
-			case PARSE_BYTE:
-				out = append(out, reflect.ValueOf(s[ptr]))
-				ptr++
-			case PARSE_INT:
-				var num int
-				num, ptr = readInt(s, ptr)
-				out = append(out, reflect.ValueOf(num))
-			case PARSE_FLOAT:
-				var num float64
-				num, ptr = readFloat64(s, ptr)
-				out = append(out, reflect.ValueOf(num))
-			case PARSE_VAR_STR:
-				var str string
-				str, ptr = readWord(s, ptr)
-				out = append(out, reflect.ValueOf(str))
-			case PARSE_INT_ARR:
-				arr := make([]int, 0, 1)
-				var num int
-				for ptr < len(s) {
-					num, ptr = readInt(s, ptr)
-					arr = append(arr, num)
-					if !match(s, ptr, ',') {
-						break
-					}
-					ptr++
-					ptr = eatWhitespace(s, ptr)
-				}
-				out = append(out, reflect.ValueOf(arr))
-			case PARSE_STR_ARR:
-				arr := make([]string, 0, 1)
-				var str string
-				for ptr < len(s) {
-					str, ptr = readWord(s, ptr)
-					arr = append(arr, str)
-					if !match(s, ptr, ',') {
-						break
-					}
-					ptr++
-					ptr = eatWhitespace(s, ptr)
-				}
-				out = append(out, reflect.ValueOf(arr))
-			default:
-				fatalf("Unsupported instr: %+v", instr)
+func execScanfInstr(instr string, input string, iptr int, arg any) int {
+	//TODO: check the pointer type
+	switch instr {
+	case "byte":
+		*(arg.(*byte)) = input[iptr]
+		iptr++
+	case "int":
+		var intv int
+		intv, iptr = readInt(input, iptr)
+		*(arg.(*int)) = intv
+	case "float":
+		var floatv float64
+		floatv, iptr = readFloat64(input, iptr)
+		*(arg.(*float64)) = floatv
+	case "string":
+		var strv string
+		strv, iptr = readWord(input, iptr)
+		*(arg.(*string)) = strv
+	case "[]int":
+		arr := make([]int, 0, 1)
+		var num int
+		for iptr < len(input) {
+			num, iptr = readInt(input, iptr)
+			arr = append(arr, num)
+			if !match(input, iptr, ',') {
+				break
 			}
+			iptr++
+			iptr = eatWhitespace(input, iptr)
 		}
-
-		return out
+		*(arg.(*[]int)) = arr
+	case "[]float":
+		arr := make([]float64, 0, 1)
+		var num float64
+		for iptr < len(input) {
+			num, iptr = readFloat64(input, iptr)
+			arr = append(arr, num)
+			if !match(input, iptr, ',') {
+				break
+			}
+			iptr++
+			iptr = eatWhitespace(input, iptr)
+		}
+		*(arg.(*[]float64)) = arr
+	case "[]string":
+		arr := make([]string, 0, 1)
+		var str string
+		for iptr < len(input) {
+			str, iptr = readWord(input, iptr)
+			arr = append(arr, str)
+			if !match(input, iptr, ',') {
+				break
+			}
+			iptr++
+			iptr = eatWhitespace(input, iptr)
+		}
+		*(arg.(*[]string)) = arr
+	default:
+		fatalf("unsupported instr: %s", instr)
 	}
-
-	fnType := reflect.FuncOf(
-		[]reflect.Type{reflect.TypeOf(aStr)},
-		outTypes,
-		false,
-	)
-
-	fn := reflect.MakeFunc(fnType, doParse)
-	return fn.Interface().(T)
+	return iptr
 }
 
-func parseReadInstr(tmpl string, ptr int) (*ParseInstr, int) {
-	if tmpl[ptr] == '{' {
-		ptr++
-		prev := ptr
-		for ptr < len(tmpl) && tmpl[ptr] != '}' {
-			ptr++
+func Scanf(input string, tmpl string, args ...any) {
+	iptr, tptr := 0, 0
+	argix := 0
+	for iptr < len(input) && tptr < len(tmpl) {
+		for tptr < len(tmpl) && iptr < len(input) && tmpl[tptr] != '{' {
+			if input[iptr] != tmpl[tptr] {
+				fatalf("input and template mismatch around pos %d: %s", iptr, input[:iptr+1])
+			}
+			tptr++
+			iptr++
 		}
-		ii := tmpl[prev:ptr]
-		ptr++
-		if code, ok := PARSE_INSTR_CODE_MAP[ii]; ok {
-			return &ParseInstr{
-				code:    code,
-				capture: true,
-			}, ptr
+		if tptr < len(tmpl) && tmpl[tptr] == '{' {
+			tptr++
+			from := tptr
+			for tptr < len(tmpl) && tmpl[tptr] != '}' {
+				tptr++
+			}
+			if tmpl[tptr] != '}' {
+				fatalf("template is missing a terminating curly brace: %s", tmpl[:tptr])
+			}
+			instr := tmpl[from:tptr]
+			tptr++
+			iptr = execScanfInstr(instr, input, iptr, args[argix])
+			argix++
 		}
-		fatalf("unrecognised parse instr: %s", ii)
 	}
-	prev := ptr
-	for ptr < len(tmpl) && tmpl[ptr] != '{' {
-		ptr++
-	}
-	return &ParseInstr{
-		code:    PARSE_STC_STR,
-		capture: false,
-		arg:     tmpl[prev:ptr],
-	}, ptr
 }

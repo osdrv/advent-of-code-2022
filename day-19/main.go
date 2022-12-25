@@ -29,19 +29,22 @@ const (
 func bestQuality(bp [4]cost, time int) int {
 	maxOre := max(bp[ORE].ore, max(bp[CLAY].ore, max(bp[OBSIDIAN].ore, bp[GEODE].ore)))
 
-	memo := make(map[[8]int]int)
+	memo := make(map[[7]int][2]int)
 	var rec func(t int, robots [4]int, budget cost) int
 	rec = func(t int, robots [4]int, budget cost) int {
 		if t == 0 {
 			return budget.geode
 		}
 
-		key := [8]int{t, robots[0], robots[1], robots[2], robots[3], budget.clay, budget.obsidian, budget.ore}
+		key := [7]int{robots[0], robots[1], robots[2], robots[3], budget.clay, budget.obsidian, budget.ore}
 		if prev, ok := memo[key]; ok {
-			return prev
+			if prev[0] <= t {
+				return 0
+			} else if prev[0] == t {
+				return prev[1]
+			}
+			// otherwise do computation
 		}
-
-		// do nothing
 
 		mq := 0
 
@@ -97,9 +100,9 @@ func bestQuality(bp [4]cost, time int) int {
 			}))
 		}
 
-		memo[key] = mq
+		memo[key] = [2]int{t, mq}
 
-		return memo[key]
+		return mq
 	}
 
 	return rec(time, [4]int{1, 0, 0, 0}, cost{})

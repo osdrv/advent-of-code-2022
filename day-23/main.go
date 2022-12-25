@@ -153,15 +153,19 @@ func main() {
 		}
 	}
 
-	debugf("field: %+v", field)
-	print(printField(field))
+	if DEBUG {
+		printf("field: %+v", field)
+		print(printField(field))
+	}
 
 	CHECKPOINT := 10
 
 	for round := 0; round < CHECKPOINT; round++ {
-		printf("=== round %d ===", round)
 		field, _ = evolve(field, round)
-		print(printField(field))
+		if DEBUG {
+			printf("=== round %d ===", round)
+			print(printField(field))
+		}
 	}
 
 	minx, maxx, miny, maxy := minmax(field)
